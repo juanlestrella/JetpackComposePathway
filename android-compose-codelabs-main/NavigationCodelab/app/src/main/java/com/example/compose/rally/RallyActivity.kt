@@ -28,10 +28,20 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
+import com.example.compose.rally.SingleAccount.arguments
+import com.example.compose.rally.ui.accounts.AccountsScreen
+import com.example.compose.rally.ui.accounts.SingleAccountScreen
+import com.example.compose.rally.ui.bills.BillsScreen
 import com.example.compose.rally.ui.components.RallyTabRow
+import com.example.compose.rally.ui.overview.OverviewScreen
 import com.example.compose.rally.ui.theme.RallyTheme
 
 /**
@@ -50,14 +60,22 @@ class RallyActivity : ComponentActivity() {
 @Composable
 fun RallyApp() {
     RallyTheme {
-        var currentScreen: RallyDestination by remember { mutableStateOf(Overview) }
         val navController = rememberNavController()
+        val currentBackStack by navController.currentBackStackEntryAsState()
+        // Fetch your currentDestination:
+        val currentDestination = currentBackStack?.destination
+        // Change the variable to this and use Overview as a backup screen if this returns null
+        var currentScreen = rallyTabRowScreens.find {
+            it.route == currentDestination?.route} ?: Overview
         Scaffold(
             topBar = {
                 RallyTabRow(
                     allScreens = rallyTabRowScreens,
-                    onTabSelected = { screen -> currentScreen = screen },
-                    currentScreen = currentScreen
+                    onTabSelected = { newScreen ->
+                        navController
+                            .navigateSingleTopTo(newScreen.route)
+                    },
+                    currentScreen = currentScreen,
                 )
             }
         ) { innerPadding ->
@@ -66,16 +84,55 @@ fun RallyApp() {
                 startDestination = Overview.route,
                 modifier = Modifier.padding(innerPadding)
             ) {
-                composable(route = Overview.route){
-                    Overview.screen
+                composable(route = Overview.route) {
+                    OverviewScreen(
+                        onClickSeeAllAccounts = {
+                            navController.navigateSingleTopTo(Accounts.route)
+                        },
+                        onClickSeeAllBills = {
+                            navController.navigateSingleTopTo(Bills.route)
+                        },
+                        onAccountClick = { accountType ->
+                            navController.navigateToSingleAccount(accountType)
+                        }
+                    )
                 }
-                composable(route = Accounts.route){
-                    Accounts.screen
+                composable(route = Accounts.route) {
+                    AccountsScreen(
+                        onAccountClick = { accountType ->
+                            navController.navigateToSingleAccount(accountType)
+                        }
+                    )
                 }
-                composable(route = Bills.route){
-                    Bills.screen
+                composable(route = Bills.route) {
+                    BillsScreen()
+                }
+                // handle displaying individual accounts to the graph
+                composable(
+                    route = SingleAccount.routeWithArgs,
+                    arguments = SingleAccount.arguments
+                ){ navBackStackEntry ->
+                    // Retrieve the passed argument
+                    val accountType = navBackStackEntry.arguments?.getString(SingleAccount.accountTypeArg)
+
+                    // Pass accountType to SingleAccountScreen
+                    SingleAccountScreen(accountType)
                 }
             }
         }
     }
+}
+
+fun NavHostController.navigateSingleTopTo(route: String) =
+    this.navigate(route) {
+
+        popUpTo(this@navigateSingleTopTo.graph.findStartDestination().id) {
+            saveState = true
+        }
+        launchSingleTop = true
+        restoreState = true
+    }
+
+private fun NavHostController.navigateToSingleAccount(accountType: String){
+    this.navigateSingleTopTo("${SingleAccount.route}/$accountType")
 }
