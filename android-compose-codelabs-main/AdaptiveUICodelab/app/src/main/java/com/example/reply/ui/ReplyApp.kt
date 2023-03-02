@@ -16,6 +16,7 @@
 
 package com.example.reply.ui
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -34,19 +35,9 @@ import androidx.compose.material.icons.filled.MenuOpen
 import androidx.compose.material.icons.outlined.Chat
 import androidx.compose.material.icons.outlined.People
 import androidx.compose.material.icons.outlined.Videocam
-import androidx.compose.material3.DrawerValue
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationDrawerItem
-import androidx.compose.material3.NavigationDrawerItemDefaults
-import androidx.compose.material3.NavigationRail
-import androidx.compose.material3.NavigationRailItem
-import androidx.compose.material3.Text
-import androidx.compose.material3.rememberDrawerState
+import androidx.compose.material3.*
+import androidx.compose.material3.windowsizeclass.WindowSizeClass
+import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -55,41 +46,128 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.window.layout.FoldingFeature
 import com.example.reply.R
+import com.example.reply.ui.utils.DevicePosture
+import com.example.reply.ui.utils.ReplyContentType
+import com.example.reply.ui.utils.ReplyNavigationType
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ReplyApp(replyHomeUIState: ReplyHomeUIState) {
-    // You will add navigation info here
-    ReplyNavigationWrapperUI(replyHomeUIState)
+fun ReplyApp(
+    replyHomeUIState: ReplyHomeUIState,
+    windowSize: WindowWidthSizeClass,
+    foldingDevicePosture: DevicePosture,
+) {
+    /**
+     * This will help us select type of navigation and content type depending on window size and
+     * fold state of the device.
+     */
+    val navigationType: ReplyNavigationType
+    val contentType: ReplyContentType
+
+    when (windowSize) {
+        WindowWidthSizeClass.Compact -> {
+            navigationType = ReplyNavigationType.BOTTOM_NAVIGATION
+            contentType = ReplyContentType.LIST_ONLY
+        }
+        WindowWidthSizeClass.Medium -> {
+            navigationType = ReplyNavigationType.NAVIGATION_RAIL
+            contentType = if (foldingDevicePosture is DevicePosture.BookPosture
+                || foldingDevicePosture is DevicePosture.Separating) {
+                ReplyContentType.LIST_AND_DETAIL
+            } else {
+                ReplyContentType.LIST_ONLY
+            }
+        }
+        WindowWidthSizeClass.Expanded -> {
+            navigationType = if (foldingDevicePosture is DevicePosture.BookPosture) {
+                ReplyNavigationType.NAVIGATION_RAIL
+            } else {
+                ReplyNavigationType.PERMANENT_NAVIGATION_DRAWER
+            }
+            contentType = ReplyContentType.LIST_AND_DETAIL
+        }
+        else -> {
+            navigationType = ReplyNavigationType.BOTTOM_NAVIGATION
+            contentType = ReplyContentType.LIST_ONLY
+        }
+    }
+    ReplyNavigationWrapperUI(navigationType, contentType, replyHomeUIState)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ReplyNavigationWrapperUI(
+    navigationType: ReplyNavigationType,
+    contentType: ReplyContentType,
     replyHomeUIState: ReplyHomeUIState
 ) {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val selectedDestination = ReplyDestinations.INBOX
 
-    ReplyAppContent(replyHomeUIState)
+    if (navigationType == ReplyNavigationType.PERMANENT_NAVIGATION_DRAWER) {
+        PermanentNavigationDrawer(drawerContent = { NavigationDrawerContent(selectedDestination) }) {
+            ReplyAppContent(navigationType, contentType, replyHomeUIState)
+        }
+    } else {
+        ModalNavigationDrawer(
+            drawerContent = {
+                NavigationDrawerContent(
+                    selectedDestination,
+                    onDrawerClicked = {
+                        scope.launch {
+                            drawerState.close()
+                        }
+                    }
+                )
+            },
+            drawerState = drawerState
+        ) {
+            ReplyAppContent(
+                navigationType, contentType, replyHomeUIState,
+                onDrawerClicked = {
+                    scope.launch {
+                        drawerState.open()
+                    }
+                }
+            )
+        }
+    }
 }
 
 
 @Composable
 fun ReplyAppContent(
+    navigationType: ReplyNavigationType,
+    contentType: ReplyContentType,
     replyHomeUIState: ReplyHomeUIState,
     onDrawerClicked: () -> Unit = {}
 ) {
-    Row(modifier = Modifier
-        .fillMaxSize()) {
+    Row(modifier = Modifier.fillMaxSize()) {
+        AnimatedVisibility(visible = navigationType == ReplyNavigationType.NAVIGATION_RAIL) {
+            ReplyNavigationRail(
+                onDrawerClicked = onDrawerClicked
+            )
+        }
         Column(modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.inverseOnSurface)
         ) {
-            ReplyListOnlyContent(replyHomeUIState = replyHomeUIState, modifier = Modifier.weight(1f))
-            ReplyBottomNavigationBar()
+            if (contentType == ReplyContentType.LIST_AND_DETAIL) {
+                ReplyListAndDetailContent(
+                    replyHomeUIState = replyHomeUIState,
+                    modifier = Modifier.weight(1f),
+                )
+            } else {
+                ReplyListOnlyContent(replyHomeUIState = replyHomeUIState, modifier = Modifier.weight(1f))
+            }
+
+            AnimatedVisibility(visible = navigationType == ReplyNavigationType.BOTTOM_NAVIGATION) {
+                ReplyBottomNavigationBar()
+            }
         }
     }
 }
